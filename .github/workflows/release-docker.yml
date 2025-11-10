@@ -1,0 +1,145 @@
+name: Release Docker Image
+
+concurrency:
+  group: release-docker-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-and-publish:
+    name: Build and Publish Docker Image
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Check out code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: all
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          version: latest
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from release tag
+        id: version
+        run: |
+          # Remove 'v' prefix if present, e.g., v1.0.0 -> 1.0.0
+          VERSION="${{ github.event.release.tag_name }}"
+          if [[ $VERSION == v* ]]; then
+            VERSION=${VERSION#v}
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag_name=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ghcr.io/metatube-community/metatube-server:latest
+            ghcr.io/metatube-community/metatube-server:${{ steps.version.outputs.version }}
+            ghcr.io/metatube-community/metatube-server:${{ steps.version.outputs.tag_name }}
+          labels: |
+            org.opencontainers.image.title=MetaTube Server
+            org.opencontainers.image.description=MetaTube SDK Go Server
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.created=${{ github.event.release.published_at }}
+            org.opencontainers.image.source=${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=Apache-2.0
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate image manifest
+        id: manifest
+        run: |
+          echo "### 🐳 Docker Images Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Registry | Tag | Digest |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          
+          # Get digests for each tag
+          for tag in "latest" "${{ steps.version.outputs.version }}" "${{ steps.version.outputs.tag_name }}"; do
+            DIGEST=$(docker buildx imagetools inspect ghcr.io/metatube-community/metatube-server:$tag --format '{{.Manifest.Digest}}' 2>/dev/null || echo "N/A")
+            echo "| ghcr.io/metatube-community/metatube-server | $tag | $DIGEST |" >> $GITHUB_STEP_SUMMARY
+          done
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Pull Commands:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "# Pull latest version" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ghcr.io/metatube-community/metatube-server:latest" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Pull specific version" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ghcr.io/metatube-community/metatube-server:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Update release description with image info
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: release } = await github.rest.repos.getRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: context.payload.release.id
+            });
+
+            const imageInfo = `
+## 🐳 Docker Image
+
+This release includes Docker images published to GitHub Container Registry:
+
+### Tags
+- \`ghcr.io/metatube-community/metatube-server:latest\` - Latest version
+- \`ghcr.io/metatube-community/metatube-server:${{ steps.version.outputs.version }}\` - Version without 'v' prefix
+- \`ghcr.io/metatube-community/metatube-server:${{ steps.version.outputs.tag_name }}\` - Full tag name
+
+### Pull Commands
+\`\`\`bash
+# Pull latest version
+docker pull ghcr.io/metatube-community/metatube-server:latest
+
+# Pull specific version
+docker pull ghcr.io/metatube-community/metatube-server:${{ steps.version.outputs.version }}
+\`\`\`
+
+### Run Container
+\`\`\`bash
+docker run -d \
+  --name metatube-server \
+  -p 8080:8080 \
+  -e TOKEN=your-token \
+  -e DSN=your-database-connection-string \
+  ghcr.io/metatube-community/metatube-server:${{ steps.version.outputs.version }}
+\`\`\`
+`;
+
+            const updatedBody = release.body + imageInfo;
+            
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: context.payload.release.id,
+              body: updatedBody
+            });
