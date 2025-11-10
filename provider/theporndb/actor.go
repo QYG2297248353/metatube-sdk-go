@@ -20,6 +20,7 @@ import (
 var (
 	_ provider.ActorProvider = (*ThePornDBActor)(nil)
 	_ provider.ActorSearcher = (*ThePornDBActor)(nil)
+	_ provider.ConfigSetter  = (*ThePornDBActor)(nil)
 )
 
 const (
@@ -43,8 +44,11 @@ func NewThePornDBActor() *ThePornDBActor {
 	}
 }
 
-func (s *ThePornDBActor) SetConfig(config map[string]string) error {
-	if accessToken, ok := config["ACCESS_TOKEN"]; ok {
+func (s *ThePornDBActor) SetConfig(config provider.Config) error {
+	if config == nil {
+		return nil
+	}
+	if accessToken, err := config.GetString("ACCESS_TOKEN"); err == nil {
 		s.accessToken = accessToken
 	}
 	return nil
