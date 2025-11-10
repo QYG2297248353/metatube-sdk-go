@@ -4,11 +4,38 @@ import (
 	"os"
 	"testing"
 
+	"github.com/metatube-community/metatube-sdk-go/internal/envconfig"
 	"github.com/metatube-community/metatube-sdk-go/provider/internal/testkit"
 )
 
 // Set env MT_THEPORNDB_ACCESS_TOKEN to run tests.
 var accessToken = os.Getenv("MT_THEPORNDB_ACCESS_TOKEN")
+
+func TestThePornDBVideo_SetConfig(t *testing.T) {
+	cfg := envconfig.NewConfig()
+	cfg.Set("ACCESS_TOKEN", "token")
+
+	provider := NewThePornDBScene()
+	if err := provider.SetConfig(cfg); err != nil {
+		t.Fatalf("SetConfig returned error: %v", err)
+	}
+	if provider.accessToken != "token" {
+		t.Fatalf("expected access token to be set, got %q", provider.accessToken)
+	}
+}
+
+func TestThePornDBActor_SetConfig(t *testing.T) {
+	cfg := envconfig.NewConfig()
+	cfg.Set("ACCESS_TOKEN", "token")
+
+	actor := NewThePornDBActor()
+	if err := actor.SetConfig(cfg); err != nil {
+		t.Fatalf("SetConfig returned error: %v", err)
+	}
+	if actor.accessToken != "token" {
+		t.Fatalf("expected access token to be set, got %q", actor.accessToken)
+	}
+}
 
 func TestThePornDBVideo_GetMovieInfoByID(t *testing.T) {
 	if accessToken == "" {
