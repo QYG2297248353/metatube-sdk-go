@@ -51,7 +51,7 @@ func initMetaTubeEnvs() *maps.CaseInsensitiveMap[string] {
 
 func initProviderConfigs(providerType string) *maps.CaseInsensitiveMap[*Config] {
 	typed := parseProviderEnvsWithPrefix(
-		fmt.Sprintf("%s%s_PROVIDER_", metaTubeEnvPrefix, strings.ToUpper(providerType)))
+		fmt.Sprintf("%s_%s_PROVIDER_", strings.TrimSuffix(metaTubeEnvPrefix, "_"), strings.ToUpper(providerType)))
 	common := parseProviderEnvsWithPrefix(
 		fmt.Sprintf("%sPROVIDER_", metaTubeEnvPrefix)) // no type prefix
 	return mergeProviderConfigs(typed, common)
